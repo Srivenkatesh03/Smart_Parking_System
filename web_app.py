@@ -14,9 +14,16 @@ from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 import numpy as np
 from models.parking_manager import ParkingManager
-from models.vehicle_detector import VehicleDetector
 from utils.resource_manager import ensure_directories_exist, load_parking_positions
 from utils.media_paths import list_available_videos
+
+# Optional ML detector import
+try:
+    from models.vehicle_detector import VehicleDetector
+    ML_AVAILABLE = True
+except ImportError:
+    ML_AVAILABLE = False
+    print("Warning: ML detector not available. Using basic detection only.")
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'smart-parking-secret-key-2024'
