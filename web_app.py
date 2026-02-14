@@ -63,11 +63,15 @@ use_ml_detection = False
 ml_detector = None
 
 # Video to reference image mapping
+DEFAULT_REFERENCE_IMAGE = 'carParkImg.png'
 VIDEO_REFERENCE_MAP = {
     'carPark.mp4': 'carParkImg.png',
     'sample5.mp4': 'saming1.png',
     'Video.mp4': 'videoImg.png'
 }
+
+# Section boundary for parking lot layout
+SECTION_BOUNDARY_X = 640  # X coordinate dividing sections A and B
 
 
 def initialize_parking_data():
@@ -85,7 +89,7 @@ def initialize_parking_data():
         parking_manager.parking_data = {}
         for i, (x, y, w, h) in enumerate(positions):
             space_id = f"S{i + 1}"
-            section = "A" if x < 640 else "B"
+            section = "A" if x < SECTION_BOUNDARY_X else "B"
             parking_manager.parking_data[f"{space_id}-{section}"] = {
                 'position': (x, y, w, h),
                 'occupied': True,
@@ -151,7 +155,7 @@ def detect_parking_spaces(frame):
             
             # Update parking data
             space_id = f"S{i + 1}"
-            section = "A" if x < 640 else "B"
+            section = "A" if x < SECTION_BOUNDARY_X else "B"
             full_id = f"{space_id}-{section}"
             if full_id in parking_manager.parking_data:
                 parking_manager.parking_data[full_id]['occupied'] = not is_free
@@ -398,7 +402,7 @@ def start_detection():
             }), 404
         
         # Get corresponding reference image
-        reference_image = VIDEO_REFERENCE_MAP.get(video_filename, 'carParkImg.png')
+        reference_image = VIDEO_REFERENCE_MAP.get(video_filename, DEFAULT_REFERENCE_IMAGE)
         
         # Load parking positions for the selected video
         try:
@@ -419,7 +423,7 @@ def start_detection():
             parking_manager.parking_data = {}
             for i, (x, y, w, h) in enumerate(positions):
                 space_id = f"S{i + 1}"
-                section = "A" if x < 640 else "B"
+                section = "A" if x < SECTION_BOUNDARY_X else "B"
                 parking_manager.parking_data[f"{space_id}-{section}"] = {
                     'position': (x, y, w, h),
                     'occupied': True,
