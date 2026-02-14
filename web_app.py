@@ -1,0 +1,449 @@
+"""
+Flask Web Application for Smart Parking Management System
+Provides RESTful API and web interface for parking monitoring
+"""
+
+import os
+import cv2
+import json
+import threading
+import time
+from datetime import datetime
+from flask import Flask, render_template, Response, jsonify, request
+from flask_cors import CORS
+from flask_socketio import SocketIO, emit
+import numpy as np
+from models.parking_manager import ParkingManager
+from models.vehicle_detector import VehicleDetector
+from utils.resource_manager import ensure_directories_exist, load_parking_positions
+from utils.media_paths import list_available_videos
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'smart-parking-secret-key-2024'
+CORS(app)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+
+# Initialize parking manager
+config_dir = "config"
+log_dir = "logs"
+ensure_directories_exist([config_dir, log_dir])
+parking_manager = ParkingManager(config_dir=config_dir, log_dir=log_dir)
+
+# Global state
+current_frame = None
+frame_lock = threading.Lock()
+detection_running = False
+video_capture = None
+current_video_source = None
+stats_history = []
+MAX_HISTORY = 100
+
+# Detection parameters
+parking_threshold = 500
+use_ml_detection = False
+ml_detector = None
+
+
+def initialize_parking_data():
+    """Initialize parking positions and data"""
+    try:
+        # Load parking positions from default reference
+        reference_image = "carParkImg.png"
+        positions = load_parking_positions(config_dir, reference_image)
+        parking_manager.posList = positions
+        parking_manager.total_spaces = len(positions)
+        parking_manager.free_spaces = 0
+        parking_manager.occupied_spaces = parking_manager.total_spaces
+        
+        # Initialize parking data structure
+        parking_manager.parking_data = {}
+        for i, (x, y, w, h) in enumerate(positions):
+            space_id = f"S{i + 1}"
+            section = "A" if x < 640 else "B"
+            parking_manager.parking_data[f"{space_id}-{section}"] = {
+                'position': (x, y, w, h),
+                'occupied': True,
+                'vehicle_id': None,
+                'last_state_change': datetime.now().isoformat(),
+                'section': section
+            }
+        
+        print(f"Initialized {len(positions)} parking spaces")
+        return True
+    except Exception as e:
+        print(f"Error initializing parking data: {e}")
+        return False
+
+
+def check_parking_space(img_processed, x, y, w, h):
+    """Check if a parking space is occupied"""
+    try:
+        img_crop = img_processed[y:y + h, x:x + w]
+        count = cv2.countNonZero(img_crop)
+        return count < parking_threshold
+    except Exception as e:
+        print(f"Error checking parking space: {e}")
+        return False
+
+
+def detect_parking_spaces(frame):
+    """Detect parking space occupancy in a frame"""
+    global current_frame
+    
+    try:
+        # Convert to grayscale and apply processing
+        img_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        img_blur = cv2.GaussianBlur(img_gray, (3, 3), 1)
+        img_threshold = cv2.adaptiveThreshold(
+            img_blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV, 25, 16
+        )
+        img_median = cv2.medianBlur(img_threshold, 5)
+        kernel = np.ones((3, 3), np.uint8)
+        img_dilate = cv2.dilate(img_median, kernel, iterations=1)
+        
+        free_count = 0
+        occupied_count = 0
+        
+        # Check each parking space
+        for i, (x, y, w, h) in enumerate(parking_manager.posList):
+            is_free = check_parking_space(img_dilate, x, y, w, h)
+            
+            # Draw rectangles on the frame
+            color = (0, 255, 0) if is_free else (0, 0, 255)
+            thickness = 2
+            cv2.rectangle(frame, (x, y), (x + w, y + h), color, thickness)
+            
+            # Add space number
+            cv2.putText(frame, f"{i+1}", (x + 5, y + 20),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            
+            if is_free:
+                free_count += 1
+            else:
+                occupied_count += 1
+            
+            # Update parking data
+            space_id = f"S{i + 1}"
+            section = "A" if x < 640 else "B"
+            full_id = f"{space_id}-{section}"
+            if full_id in parking_manager.parking_data:
+                parking_manager.parking_data[full_id]['occupied'] = not is_free
+        
+        # Update global counters
+        parking_manager.free_spaces = free_count
+        parking_manager.occupied_spaces = occupied_count
+        
+        # Add status text
+        cv2.rectangle(frame, (0, 0), (250, 80), (0, 0, 0), -1)
+        cv2.putText(frame, f"Total: {parking_manager.total_spaces}", (10, 25),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        cv2.putText(frame, f"Free: {free_count}", (10, 50),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        cv2.putText(frame, f"Occupied: {occupied_count}", (10, 75),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        
+        with frame_lock:
+            current_frame = frame.copy()
+        
+        # Record stats periodically
+        record_stats()
+        
+        return frame
+        
+    except Exception as e:
+        print(f"Error in detect_parking_spaces: {e}")
+        return frame
+
+
+def record_stats():
+    """Record current statistics to history"""
+    global stats_history
+    
+    if len(stats_history) >= MAX_HISTORY:
+        stats_history.pop(0)
+    
+    stats_history.append({
+        'timestamp': datetime.now().isoformat(),
+        'total': parking_manager.total_spaces,
+        'free': parking_manager.free_spaces,
+        'occupied': parking_manager.occupied_spaces,
+        'occupancy_rate': (parking_manager.occupied_spaces / parking_manager.total_spaces * 100) 
+                         if parking_manager.total_spaces > 0 else 0
+    })
+
+
+def detection_loop():
+    """Main detection loop for video processing"""
+    global video_capture, detection_running, current_video_source
+    
+    while detection_running:
+        try:
+            if video_capture is None or not video_capture.isOpened():
+                time.sleep(1)
+                continue
+            
+            success, frame = video_capture.read()
+            
+            if not success:
+                # Loop video
+                video_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                continue
+            
+            # Resize frame if needed
+            frame = cv2.resize(frame, (1280, 720))
+            
+            # Detect parking spaces
+            frame = detect_parking_spaces(frame)
+            
+            # Emit update via SocketIO
+            socketio.emit('parking_update', {
+                'total': parking_manager.total_spaces,
+                'free': parking_manager.free_spaces,
+                'occupied': parking_manager.occupied_spaces,
+                'timestamp': datetime.now().isoformat()
+            })
+            
+            time.sleep(0.1)  # Control frame rate
+            
+        except Exception as e:
+            print(f"Error in detection loop: {e}")
+            time.sleep(1)
+
+
+def generate_frames():
+    """Generate video frames for streaming"""
+    global current_frame
+    
+    while True:
+        try:
+            with frame_lock:
+                if current_frame is None:
+                    time.sleep(0.1)
+                    continue
+                
+                frame = current_frame.copy()
+            
+            # Encode frame as JPEG
+            ret, buffer = cv2.imencode('.jpg', frame)
+            if not ret:
+                continue
+            
+            frame_bytes = buffer.tobytes()
+            
+            # Yield frame in multipart format
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+        
+        except Exception as e:
+            print(f"Error generating frame: {e}")
+            time.sleep(0.1)
+
+
+# Web Routes
+@app.route('/')
+def index():
+    """Main dashboard page"""
+    return render_template('index.html')
+
+
+@app.route('/api/parking/status')
+def get_parking_status():
+    """Get current parking status"""
+    try:
+        spaces = []
+        for space_id, data in parking_manager.parking_data.items():
+            spaces.append({
+                'id': space_id,
+                'section': data['section'],
+                'occupied': data['occupied'],
+                'position': data['position']
+            })
+        
+        return jsonify({
+            'success': True,
+            'total_spaces': parking_manager.total_spaces,
+            'free_spaces': parking_manager.free_spaces,
+            'occupied_spaces': parking_manager.occupied_spaces,
+            'occupancy_rate': (parking_manager.occupied_spaces / parking_manager.total_spaces * 100)
+                             if parking_manager.total_spaces > 0 else 0,
+            'spaces': spaces,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/parking/stats')
+def get_parking_stats():
+    """Get parking statistics"""
+    try:
+        return jsonify({
+            'success': True,
+            'current': {
+                'total': parking_manager.total_spaces,
+                'free': parking_manager.free_spaces,
+                'occupied': parking_manager.occupied_spaces,
+                'occupancy_rate': (parking_manager.occupied_spaces / parking_manager.total_spaces * 100)
+                                 if parking_manager.total_spaces > 0 else 0
+            },
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/parking/history')
+def get_parking_history():
+    """Get historical parking data"""
+    try:
+        return jsonify({
+            'success': True,
+            'history': stats_history,
+            'count': len(stats_history)
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/video/feed')
+def video_feed():
+    """Video streaming route"""
+    return Response(generate_frames(),
+                   mimetype='multipart/x-mixed-replace; boundary=frame')
+
+
+@app.route('/api/video/sources')
+def get_video_sources():
+    """Get available video sources"""
+    try:
+        sources = list_available_videos()
+        return jsonify({
+            'success': True,
+            'sources': sources
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/detection/start', methods=['POST'])
+def start_detection():
+    """Start parking detection"""
+    global detection_running, video_capture, current_video_source
+    
+    try:
+        data = request.json or {}
+        video_source = data.get('video_source', 'media/carPark.mp4')
+        
+        if detection_running:
+            return jsonify({
+                'success': False,
+                'error': 'Detection already running'
+            }), 400
+        
+        # Initialize video capture
+        if os.path.exists(video_source):
+            video_capture = cv2.VideoCapture(video_source)
+        else:
+            video_capture = cv2.VideoCapture(0)  # Webcam fallback
+        
+        if not video_capture.isOpened():
+            return jsonify({
+                'success': False,
+                'error': 'Failed to open video source'
+            }), 500
+        
+        current_video_source = video_source
+        detection_running = True
+        
+        # Start detection thread
+        detection_thread = threading.Thread(target=detection_loop, daemon=True)
+        detection_thread.start()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Detection started',
+            'video_source': video_source
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/detection/stop', methods=['POST'])
+def stop_detection():
+    """Stop parking detection"""
+    global detection_running, video_capture
+    
+    try:
+        detection_running = False
+        
+        if video_capture is not None:
+            video_capture.release()
+            video_capture = None
+        
+        return jsonify({
+            'success': True,
+            'message': 'Detection stopped'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# SocketIO Events
+@socketio.on('connect')
+def handle_connect():
+    """Handle client connection"""
+    print('Client connected')
+    emit('connection_response', {'status': 'connected'})
+
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    """Handle client disconnection"""
+    print('Client disconnected')
+
+
+@socketio.on('request_update')
+def handle_update_request():
+    """Handle update request from client"""
+    emit('parking_update', {
+        'total': parking_manager.total_spaces,
+        'free': parking_manager.free_spaces,
+        'occupied': parking_manager.occupied_spaces,
+        'timestamp': datetime.now().isoformat()
+    })
+
+
+if __name__ == '__main__':
+    # Initialize parking data
+    initialize_parking_data()
+    
+    print("=" * 50)
+    print("Smart Parking Management System - Web Application")
+    print("=" * 50)
+    print(f"Server starting on http://localhost:5000")
+    print(f"Parking spaces loaded: {parking_manager.total_spaces}")
+    print("=" * 50)
+    
+    # Run the Flask app with SocketIO
+    socketio.run(app, debug=True, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)

@@ -17,3 +17,11 @@ scikit-learn>=0.24.1
 pandas~=2.2.3
 xgboost~=3.0.0
 pywebview~=5.4
+
+# Web Application dependencies
+Flask>=3.0.0
+Flask-CORS>=4.0.0
+Flask-SocketIO>=5.3.0
+python-socketio>=5.10.0
+python-engineio>=4.8.0
+eventlet>=0.33.3
