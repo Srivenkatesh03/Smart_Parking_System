@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+
+{% block title %}Parking Allocation - Smart Parking System{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2><i class="bi bi-diagram-3"></i> Parking Space Allocation</h2>
+        <hr>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>Parking Spaces</h5>
+            </div>
+            <div class="card-body" style="max-height: 500px; overflow-y: auto;">
+                <div class="list-group">
+                    {% for space in spaces %}
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>{{ space.space_id }}</strong>
+                            <br>
+                            <small class="text-muted">Section {{ space.section }}</small>
+                        </div>
+                        <span class="badge {% if space.is_occupied %}bg-danger{% else %}bg-success{% endif %}">
+                            {% if space.is_occupied %}Occupied{% else %}Free{% endif %}
+                        </span>
+                    </div>
+                    {% empty %}
+                    <p class="text-muted">No parking spaces configured</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>Parking Groups</h5>
+            </div>
+            <div class="card-body" style="max-height: 500px; overflow-y: auto;">
+                {% if groups %}
+                <div class="list-group">
+                    {% for group in groups %}
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <strong>{{ group.group_id }}</strong>
+                            <span class="badge {% if group.is_occupied %}bg-danger{% else %}bg-success{% endif %}">
+                                {% if group.is_occupied %}Occupied{% else %}Free{% endif %}
+                            </span>
+                        </div>
+                        <p class="mb-1">{{ group.name }}</p>
+                        <small class="text-muted">Members: {{ group.member_spaces|length }}</small>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted">No parking groups configured</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5>Allocation Visualization</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    {% for space in spaces %}
+                    <div class="col-md-2 col-sm-3 col-4 mb-3">
+                        <div class="card text-center {% if space.is_occupied %}bg-danger text-white{% else %}bg-success text-white{% endif %}">
+                            <div class="card-body py-2">
+                                <h6 class="mb-0">{{ space.space_id }}</h6>
+                                <small>{{ space.section }}</small>
+                            </div>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="col-12 text-center text-muted">
+                        <p>No parking spaces to visualize</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
