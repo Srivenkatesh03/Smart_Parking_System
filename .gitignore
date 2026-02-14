@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/*.log
+
+# Models
+*.pt
+*.pth
+*.onnx
+*.pb
+
+# Media (optional - uncomment if you don't want to track media files)
+# media/videos/*.mp4
+# media/references/*.png
+# media/references/*.jpg
+
+# Config (optional - uncomment if you don't want to track config files)
+# config/CarParkPos_*
+# config/window_config.json
+
+# Temporary files
+*.tmp
+.cache/
