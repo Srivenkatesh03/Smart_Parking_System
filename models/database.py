@@ -20,7 +20,7 @@ class ReferenceImage(db.Model):
     width = db.Column(db.Integer, nullable=False)
     height = db.Column(db.Integer, nullable=False)
     video_source = db.Column(db.String(255), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.utcnow())
     
     def __repr__(self):
         return f"<ReferenceImage {self.name} ({self.width}x{self.height})>"
@@ -48,7 +48,7 @@ class ParkingSpaceGroup(db.Model):
     member_spaces = db.Column(db.Text, nullable=False)  # JSON string of space IDs
     section = db.Column(db.String(100), default="General")
     is_occupied = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.utcnow())
     
     def __repr__(self):
         return f"<ParkingSpaceGroup {self.group_id}: {self.name}>"

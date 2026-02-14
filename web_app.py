@@ -475,10 +475,18 @@ def add_reference():
         filepath = os.path.join(references_dir, filename)
         file.save(filepath)
         
-        # Get image dimensions if not provided
-        if not width or not height:
+        # Validate and get image dimensions
+        try:
             img = PILImage.open(filepath)
-            width, height = img.size
+            img.verify()  # Verify it's a valid image
+            img = PILImage.open(filepath)  # Reopen after verify
+            if not width or not height:
+                width, height = img.size
+        except Exception as e:
+            # Remove invalid file
+            if os.path.exists(filepath):
+                os.remove(filepath)
+            return jsonify({'success': False, 'message': f'Invalid image file: {str(e)}'}), 400
         
         # Create database entry
         ref = ReferenceImage(
@@ -506,7 +514,9 @@ def add_reference():
 def delete_reference(ref_id):
     """Delete a reference image"""
     try:
-        ref = ReferenceImage.query.get_or_404(ref_id)
+        ref = ReferenceImage.query.get(ref_id)
+        if not ref:
+            return jsonify({'success': False, 'message': 'Reference image not found'}), 404
         
         # Delete file from disk
         filepath = os.path.join(references_dir, ref.filename)
