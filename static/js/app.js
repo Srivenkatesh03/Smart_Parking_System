@@ -173,13 +173,17 @@ function initializeCharts() {
 // Start detection
 async function startDetection() {
     try {
+        // Get selected video source
+        const videoSourceSelect = document.getElementById('videoSourceSelect');
+        const videoSource = videoSourceSelect ? videoSourceSelect.value : 'carPark.mp4';
+        
         const response = await fetch('/api/detection/start', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                video_source: 'media/carPark.mp4'
+                video_source: videoSource
             })
         });
         
@@ -189,10 +193,13 @@ async function startDetection() {
             detectionActive = true;
             document.getElementById('startBtn').disabled = true;
             document.getElementById('stopBtn').disabled = false;
+            if (videoSourceSelect) {
+                videoSourceSelect.disabled = true;
+            }
             document.getElementById('videoOverlay').classList.add('hidden');
             document.getElementById('videoFeed').src = '/api/video/feed';
-            updateStatusMessage('Detection active - monitoring parking spaces', 'success');
-            showNotification('Detection started successfully', 'success');
+            updateStatusMessage(`Detection active - monitoring ${data.total_spaces || 0} parking spaces`, 'success');
+            showNotification(`Detection started: ${videoSource}`, 'success');
         } else {
             showNotification('Failed to start detection: ' + data.error, 'danger');
         }
@@ -218,6 +225,10 @@ async function stopDetection() {
             detectionActive = false;
             document.getElementById('startBtn').disabled = false;
             document.getElementById('stopBtn').disabled = true;
+            const videoSourceSelect = document.getElementById('videoSourceSelect');
+            if (videoSourceSelect) {
+                videoSourceSelect.disabled = false;
+            }
             document.getElementById('videoOverlay').classList.remove('hidden');
             document.getElementById('videoFeed').src = '';
             updateStatusMessage('Detection stopped - system ready', 'info');

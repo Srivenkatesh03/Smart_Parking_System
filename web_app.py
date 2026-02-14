@@ -62,6 +62,17 @@ parking_threshold = 500
 use_ml_detection = False
 ml_detector = None
 
+# Video to reference image mapping
+DEFAULT_REFERENCE_IMAGE = 'carParkImg.png'
+VIDEO_REFERENCE_MAP = {
+    'carPark.mp4': 'carParkImg.png',
+    'sample5.mp4': 'saming1.png',
+    'Video.mp4': 'videoImg.png'
+}
+
+# Section boundary for parking lot layout
+SECTION_BOUNDARY_X = 640  # X coordinate dividing sections A and B
+
 
 def initialize_parking_data():
     """Initialize parking positions and data"""
@@ -78,7 +89,7 @@ def initialize_parking_data():
         parking_manager.parking_data = {}
         for i, (x, y, w, h) in enumerate(positions):
             space_id = f"S{i + 1}"
-            section = "A" if x < 640 else "B"
+            section = "A" if x < SECTION_BOUNDARY_X else "B"
             parking_manager.parking_data[f"{space_id}-{section}"] = {
                 'position': (x, y, w, h),
                 'occupied': True,
@@ -144,7 +155,7 @@ def detect_parking_spaces(frame):
             
             # Update parking data
             space_id = f"S{i + 1}"
-            section = "A" if x < 640 else "B"
+            section = "A" if x < SECTION_BOUNDARY_X else "B"
             full_id = f"{space_id}-{section}"
             if full_id in parking_manager.parking_data:
                 parking_manager.parking_data[full_id]['occupied'] = not is_free
@@ -369,7 +380,7 @@ def start_detection():
     
     try:
         data = request.json or {}
-        video_source = data.get('video_source', 'media/carPark.mp4')
+        video_source = data.get('video_source', 'carPark.mp4')
         
         if detection_running:
             return jsonify({
@@ -377,11 +388,60 @@ def start_detection():
                 'error': 'Detection already running'
             }), 400
         
+        # Get video filename from path
+        video_filename = os.path.basename(video_source)
+        
+        # Build full video path
+        video_path = os.path.join('media', 'videos', video_filename)
+        
+        # Check if video exists
+        if not os.path.exists(video_path):
+            return jsonify({
+                'success': False,
+                'error': f'Video file not found: {video_filename}'
+            }), 404
+        
+        # Get corresponding reference image
+        reference_image = VIDEO_REFERENCE_MAP.get(video_filename, DEFAULT_REFERENCE_IMAGE)
+        
+        # Load parking positions for the selected video
+        try:
+            positions = load_parking_positions(config_dir, reference_image)
+            if not positions:
+                return jsonify({
+                    'success': False,
+                    'error': f'No parking positions found for {reference_image}'
+                }), 500
+            
+            # Update parking manager with new positions
+            parking_manager.posList = positions
+            parking_manager.total_spaces = len(positions)
+            parking_manager.free_spaces = 0
+            parking_manager.occupied_spaces = parking_manager.total_spaces
+            
+            # Initialize parking data structure
+            parking_manager.parking_data = {}
+            for i, (x, y, w, h) in enumerate(positions):
+                space_id = f"S{i + 1}"
+                section = "A" if x < SECTION_BOUNDARY_X else "B"
+                parking_manager.parking_data[f"{space_id}-{section}"] = {
+                    'position': (x, y, w, h),
+                    'occupied': True,
+                    'vehicle_id': None,
+                    'last_state_change': datetime.now().isoformat(),
+                    'section': section
+                }
+            
+            print(f"Loaded {len(positions)} parking positions for {video_filename}")
+        except Exception as e:
+            print(f"Error loading parking positions: {e}")
+            return jsonify({
+                'success': False,
+                'error': f'Failed to load parking positions: {str(e)}'
+            }), 500
+        
         # Initialize video capture
-        if os.path.exists(video_source):
-            video_capture = cv2.VideoCapture(video_source)
-        else:
-            video_capture = cv2.VideoCapture(0)  # Webcam fallback
+        video_capture = cv2.VideoCapture(video_path)
         
         if not video_capture.isOpened():
             return jsonify({
@@ -389,7 +449,7 @@ def start_detection():
                 'error': 'Failed to open video source'
             }), 500
         
-        current_video_source = video_source
+        current_video_source = video_path
         detection_running = True
         
         # Start detection thread
@@ -399,7 +459,9 @@ def start_detection():
         return jsonify({
             'success': True,
             'message': 'Detection started',
-            'video_source': video_source
+            'video_source': video_filename,
+            'reference_image': reference_image,
+            'total_spaces': parking_manager.total_spaces
         })
         
     except Exception as e:
