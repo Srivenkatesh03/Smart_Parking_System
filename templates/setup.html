@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parking Space Setup - Smart Parking System</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .navbar {
+            background-color: #2c3e50;
+        }
+        .canvas-container {
+            background: white;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            overflow: auto;
+            max-height: 600px;
+        }
+        #parking-canvas {
+            cursor: crosshair;
+            display: block;
+            margin: 0 auto;
+        }
+        .control-panel {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .space-selected {
+            outline: 3px solid #ffc107;
+        }
+        .btn-group {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-car-front-fill"></i> Smart Parking System
+            </a>
+            <div class="d-flex">
+                <a href="/" class="btn btn-outline-light me-2">Dashboard</a>
+                <a href="/setup" class="btn btn-light me-2">Setup</a>
+                <a href="/references" class="btn btn-outline-light">References</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <div class="row">
+            <div class="col-12">
+                <h2><i class="bi bi-gear"></i> Parking Space Setup</h2>
+                <p class="text-muted">Draw parking spaces and manage grouping</p>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- Control Panel -->
+            <div class="col-lg-3">
+                <div class="control-panel">
+                    <h5><i class="bi bi-sliders"></i> Controls</h5>
+                    
+                    <!-- Reference Image Selection -->
+                    <div class="mb-3">
+                        <label class="form-label">Reference Image:</label>
+                        <select class="form-select" id="reference-select">
+                            <option value="">Select reference...</option>
+                            {% for ref in references %}
+                            <option value="{{ ref.id }}" data-filename="{{ ref.filename }}">{{ ref.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <!-- Drawing Mode -->
+                    <div class="mb-3">
+                        <label class="form-label">Drawing Mode:</label>
+                        <div class="btn-group w-100" role="group">
+                            <input type="radio" class="btn-check" name="drawing-mode" id="mode-draw" value="draw" checked>
+                            <label class="btn btn-outline-primary" for="mode-draw">
+                                <i class="bi bi-pencil"></i> Draw
+                            </label>
+                            
+                            <input type="radio" class="btn-check" name="drawing-mode" id="mode-select" value="select">
+                            <label class="btn btn-outline-success" for="mode-select">
+                                <i class="bi bi-hand-index"></i> Select
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- Group Management -->
+                    <div class="mb-3">
+                        <label class="form-label">Group Management:</label>
+                        <div class="d-grid gap-2">
+                            <button type="button" class="btn btn-success" id="group-selected">
+                                <i class="bi bi-collection"></i> Group Selected
+                            </button>
+                            <button type="button" class="btn btn-danger" id="delete-selected">
+                                <i class="bi bi-trash"></i> Delete Selected
+                            </button>
+                        </div>
+                        <span id="selection-status" class="badge bg-secondary mt-2 w-100">No spaces selected</span>
+                    </div>
+                    
+                    <!-- Space Management -->
+                    <div class="mb-3">
+                        <label class="form-label">Space Management:</label>
+                        <div class="d-grid gap-2">
+                            <button type="button" class="btn btn-primary" id="save-spaces">
+                                <i class="bi bi-save"></i> Save Layout
+                            </button>
+                            <button type="button" class="btn btn-warning" id="clear-spaces">
+                                <i class="bi bi-eraser"></i> Clear All
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Statistics -->
+                    <div class="alert alert-info">
+                        <strong>Statistics:</strong>
+                        <ul class="mb-0 mt-2">
+                            <li>Total Spaces: <span id="total-spaces">0</span></li>
+                            <li>Selected: <span id="selected-count">0</span></li>
+                            <li>Groups: <span id="groups-count">0</span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Canvas Area -->
+            <div class="col-lg-9">
+                <div class="canvas-container">
+                    <canvas id="parking-canvas" width="1280" height="720"></canvas>
+                </div>
+                
+                <!-- Instructions -->
+                <div class="alert alert-secondary mt-3">
+                    <h6>Instructions:</h6>
+                    <ul class="mb-0">
+                        <li><strong>Draw Mode:</strong> Click and drag to draw parking spaces. Right-click on a space to delete it.</li>
+                        <li><strong>Select Mode:</strong> Click on spaces to select/deselect them (yellow outline).</li>
+                        <li><strong>Grouping:</strong> Select multiple spaces and click "Group Selected" to create a group for larger vehicles.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- jQuery and Bootstrap JS -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        let canvas, ctx;
+        let parkingSpaces = [];
+        let selectedSpaces = [];
+        let currentMode = 'draw';
+        let isDrawing = false;
+        let startX, startY;
+        let referenceImage = null;
+        let groups = [];
+        
+        $(document).ready(function() {
+            canvas = document.getElementById('parking-canvas');
+            ctx = canvas.getContext('2d');
+            
+            // Initialize canvas
+            redrawCanvas();
+            
+            // Load existing spaces if available
+            loadExistingSpaces();
+            
+            // Drawing mode change
+            $('input[name="drawing-mode"]').change(function() {
+                currentMode = $(this).val();
+                canvas.style.cursor = currentMode === 'draw' ? 'crosshair' : 'pointer';
+                selectedSpaces = [];
+                updateSelectionStatus();
+                redrawCanvas();
+            });
+            
+            // Reference image selection
+            $('#reference-select').change(function() {
+                const filename = $(this).find(':selected').data('filename');
+                if (filename) {
+                    loadReferenceImage(filename);
+                }
+            });
+            
+            // Canvas mouse events
+            canvas.addEventListener('mousedown', handleMouseDown);
+            canvas.addEventListener('mousemove', handleMouseMove);
+            canvas.addEventListener('mouseup', handleMouseUp);
+            canvas.addEventListener('contextmenu', handleRightClick);
+            
+            // Button events
+            $('#group-selected').click(createGroup);
+            $('#delete-selected').click(deleteSelected);
+            $('#save-spaces').click(saveSpaces);
+            $('#clear-spaces').click(clearAll);
+        });
+        
+        function loadReferenceImage(filename) {
+            const img = new Image();
+            img.onload = function() {
+                referenceImage = img;
+                canvas.width = img.width;
+                canvas.height = img.height;
+                redrawCanvas();
+            };
+            img.src = '/media/references/' + filename;
+        }
+        
+        function handleMouseDown(e) {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            if (currentMode === 'draw') {
+                isDrawing = true;
+                startX = x;
+                startY = y;
+            } else if (currentMode === 'select') {
+                toggleSpaceSelection(x, y);
+            }
+        }
+        
+        function handleMouseMove(e) {
+            if (!isDrawing || currentMode !== 'draw') return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            redrawCanvas();
+            ctx.strokeStyle = '#00ff00';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(startX, startY, x - startX, y - startY);
+        }
+        
+        function handleMouseUp(e) {
+            if (!isDrawing || currentMode !== 'draw') return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            const width = Math.abs(x - startX);
+            const height = Math.abs(y - startY);
+            
+            if (width > 20 && height > 20) {
+                parkingSpaces.push({
+                    x: Math.min(startX, x),
+                    y: Math.min(startY, y),
+                    width: width,
+                    height: height,
+                    id: 'S' + (parkingSpaces.length + 1)
+                });
+                updateStatistics();
+            }
+            
+            isDrawing = false;
+            redrawCanvas();
+        }
+        
+        function handleRightClick(e) {
+            e.preventDefault();
+            if (currentMode !== 'draw') return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            // Find and remove space at this position
+            for (let i = parkingSpaces.length - 1; i >= 0; i--) {
+                const space = parkingSpaces[i];
+                if (x >= space.x && x <= space.x + space.width &&
+                    y >= space.y && y <= space.y + space.height) {
+                    parkingSpaces.splice(i, 1);
+                    updateStatistics();
+                    redrawCanvas();
+                    break;
+                }
+            }
+        }
+        
+        function toggleSpaceSelection(x, y) {
+            for (let i = 0; i < parkingSpaces.length; i++) {
+                const space = parkingSpaces[i];
+                if (x >= space.x && x <= space.x + space.width &&
+                    y >= space.y && y <= space.y + space.height) {
+                    
+                    const index = selectedSpaces.indexOf(i);
+                    if (index > -1) {
+                        selectedSpaces.splice(index, 1);
+                    } else {
+                        selectedSpaces.push(i);
+                    }
+                    
+                    updateSelectionStatus();
+                    redrawCanvas();
+                    break;
+                }
+            }
+        }
+        
+        function redrawCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw reference image if loaded
+            if (referenceImage) {
+                ctx.drawImage(referenceImage, 0, 0);
+            } else {
+                ctx.fillStyle = '#e9ecef';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+            
+            // Draw parking spaces
+            parkingSpaces.forEach((space, index) => {
+                const isSelected = selectedSpaces.includes(index);
+                
+                ctx.strokeStyle = isSelected ? '#ffc107' : '#00ff00';
+                ctx.lineWidth = isSelected ? 4 : 2;
+                ctx.strokeRect(space.x, space.y, space.width, space.height);
+                
+                // Draw space ID
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '14px Arial';
+                ctx.fillText(space.id, space.x + 5, space.y + 20);
+            });
+        }
+        
+        function updateSelectionStatus() {
+            $('#selected-count').text(selectedSpaces.length);
+            if (selectedSpaces.length === 0) {
+                $('#selection-status').text('No spaces selected').removeClass('bg-warning').addClass('bg-secondary');
+            } else {
+                $('#selection-status').text(selectedSpaces.length + ' space(s) selected').removeClass('bg-secondary').addClass('bg-warning');
+            }
+        }
+        
+        function updateStatistics() {
+            $('#total-spaces').text(parkingSpaces.length);
+            $('#selected-count').text(selectedSpaces.length);
+        }
+        
+        function createGroup() {
+            if (selectedSpaces.length < 2) {
+                alert('Please select at least 2 parking spaces to create a group.');
+                return;
+            }
+            
+            const groupName = prompt('Enter a name for this group:');
+            if (!groupName) return;
+            
+            const memberSpaces = selectedSpaces.map(i => parkingSpaces[i].id);
+            
+            $.post('/api/groups/create', {
+                name: groupName,
+                member_spaces: JSON.stringify(memberSpaces)
+            }, function(response) {
+                if (response.success) {
+                    alert(response.message);
+                    groups.push({
+                        name: groupName,
+                        members: memberSpaces
+                    });
+                    $('#groups-count').text(groups.length);
+                    selectedSpaces = [];
+                    updateSelectionStatus();
+                    redrawCanvas();
+                } else {
+                    alert('Error: ' + response.message);
+                }
+            }).fail(function(xhr) {
+                alert('Error: ' + (xhr.responseJSON?.message || 'Unknown error'));
+            });
+        }
+        
+        function deleteSelected() {
+            if (selectedSpaces.length === 0) {
+                alert('No spaces selected for deletion.');
+                return;
+            }
+            
+            if (!confirm(`Delete ${selectedSpaces.length} selected space(s)?`)) {
+                return;
+            }
+            
+            // Remove selected spaces (sort in reverse to maintain indices)
+            selectedSpaces.sort((a, b) => b - a).forEach(index => {
+                parkingSpaces.splice(index, 1);
+            });
+            
+            selectedSpaces = [];
+            updateSelectionStatus();
+            updateStatistics();
+            redrawCanvas();
+        }
+        
+        function saveSpaces() {
+            if (parkingSpaces.length === 0) {
+                alert('No parking spaces to save.');
+                return;
+            }
+            
+            $.post('/api/setup/save', {
+                spaces: JSON.stringify(parkingSpaces),
+                reference_id: $('#reference-select').val()
+            }, function(response) {
+                if (response.success) {
+                    alert('Parking layout saved successfully!');
+                } else {
+                    alert('Error: ' + response.message);
+                }
+            }).fail(function(xhr) {
+                alert('Error: ' + (xhr.responseJSON?.message || 'Unknown error'));
+            });
+        }
+        
+        function clearAll() {
+            if (!confirm('Clear all parking spaces? This cannot be undone.')) {
+                return;
+            }
+            
+            parkingSpaces = [];
+            selectedSpaces = [];
+            updateSelectionStatus();
+            updateStatistics();
+            redrawCanvas();
+        }
+        
+        function loadExistingSpaces() {
+            $.get('/api/setup/load', function(response) {
+                if (response.success && response.spaces) {
+                    parkingSpaces = response.spaces;
+                    updateStatistics();
+                    redrawCanvas();
+                }
+            });
+        }
+    </script>
+</body>
+</html>

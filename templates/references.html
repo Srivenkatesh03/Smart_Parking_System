@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reference Images - Smart Parking System</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .navbar {
+            background-color: #2c3e50;
+        }
+        .card {
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .reference-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .reference-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+            transition: transform 0.2s;
+        }
+        .reference-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        .reference-img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            background: #e9ecef;
+        }
+        .reference-info {
+            padding: 15px;
+        }
+        .btn-delete {
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-car-front-fill"></i> Smart Parking System
+            </a>
+            <div class="d-flex">
+                <a href="/" class="btn btn-outline-light me-2">Dashboard</a>
+                <a href="/setup" class="btn btn-outline-light me-2">Setup</a>
+                <a href="/references" class="btn btn-light">References</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12">
+                <h2><i class="bi bi-image"></i> Reference Images</h2>
+                <p class="text-muted">Manage reference images for parking space setup</p>
+            </div>
+        </div>
+
+        <!-- Add Reference Form -->
+        <div class="row">
+            <div class="col-lg-6">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-plus-circle"></i> Add New Reference Image</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="reference-form" enctype="multipart/form-data">
+                            <div class="mb-3">
+                                <label for="ref-name" class="form-label">Reference Name</label>
+                                <input type="text" class="form-control" id="ref-name" placeholder="e.g., Main Parking Lot" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="ref-image-upload" class="form-label">Upload Image</label>
+                                <input type="file" class="form-control" id="ref-image-upload" accept=".jpg,.jpeg,.png,.bmp" required>
+                                <small class="text-muted">Supported formats: JPG, PNG, BMP</small>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="ref-width" class="form-label">Width (px)</label>
+                                    <input type="number" class="form-control" id="ref-width" placeholder="Auto-detected" readonly>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="ref-height" class="form-label">Height (px)</label>
+                                    <input type="number" class="form-control" id="ref-height" placeholder="Auto-detected" readonly>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="ref-video" class="form-label">Associated Video (optional)</label>
+                                <input type="text" class="form-control" id="ref-video" placeholder="e.g., media/carPark.mp4">
+                            </div>
+                            
+                            <button type="submit" class="btn btn-primary w-100" id="save-reference">
+                                <i class="bi bi-save"></i> Save Reference
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Image Preview -->
+            <div class="col-lg-6">
+                <div class="card">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0"><i class="bi bi-eye"></i> Image Preview</h5>
+                    </div>
+                    <div class="card-body text-center">
+                        <img id="image-preview" src="" alt="No image selected" class="img-fluid" style="max-height: 300px; display: none;">
+                        <div id="preview-placeholder" class="text-muted">
+                            <i class="bi bi-image" style="font-size: 48px;"></i>
+                            <p>Select an image to preview</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reference Images Grid -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <h4><i class="bi bi-collection"></i> Saved References</h4>
+                <div class="reference-grid" id="reference-grid">
+                    {% if references %}
+                        {% for ref in references %}
+                        <div class="reference-card card">
+                            <img src="/media/references/{{ ref.filename }}" class="reference-img" alt="{{ ref.name }}">
+                            <div class="reference-info">
+                                <h5 class="card-title">{{ ref.name }}</h5>
+                                <p class="card-text mb-1">
+                                    <small class="text-muted">
+                                        <i class="bi bi-arrows-angle-expand"></i> {{ ref.width }} x {{ ref.height }}
+                                    </small>
+                                </p>
+                                {% if ref.video_source %}
+                                <p class="card-text mb-2">
+                                    <small class="text-muted">
+                                        <i class="bi bi-camera-video"></i> {{ ref.video_source }}
+                                    </small>
+                                </p>
+                                {% endif %}
+                                <button class="btn btn-danger btn-sm btn-delete" data-ref-id="{{ ref.id }}" data-action="delete">
+                                    <i class="bi bi-trash"></i> Delete
+                                </button>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="col-12">
+                            <div class="alert alert-info">
+                                <i class="bi bi-info-circle"></i> No reference images yet. Add your first reference image above.
+                            </div>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- jQuery and Bootstrap JS -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        $(document).ready(function() {
+            // Image preview and dimension detection
+            $('#ref-image-upload').change(function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function(event) {
+                        const img = new Image();
+                        img.onload = function() {
+                            $('#ref-width').val(this.width);
+                            $('#ref-height').val(this.height);
+                            $('#image-preview').attr('src', event.target.result).show();
+                            $('#preview-placeholder').hide();
+                        };
+                        img.src = event.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+            
+            // Form submission
+            $('#reference-form').submit(function(e) {
+                e.preventDefault();
+                
+                const formData = new FormData();
+                formData.append('name', $('#ref-name').val());
+                formData.append('width', $('#ref-width').val());
+                formData.append('height', $('#ref-height').val());
+                formData.append('video_source', $('#ref-video').val());
+                formData.append('image', $('#ref-image-upload')[0].files[0]);
+                
+                $.ajax({
+                    url: '/api/references/add',
+                    type: 'POST',
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    success: function(response) {
+                        if (response.success) {
+                            alert(response.message);
+                            location.reload();
+                        } else {
+                            alert('Error: ' + response.message);
+                        }
+                    },
+                    error: function(xhr) {
+                        const errorMsg = xhr.responseJSON?.message || 'Unknown error occurred';
+                        alert('Error: ' + errorMsg);
+                    }
+                });
+            });
+            
+            // Delete reference
+            $(document).on('click', '[data-action="delete"]', function() {
+                const refId = $(this).data('ref-id');
+                if (confirm('Are you sure you want to delete this reference image?')) {
+                    $.ajax({
+                        url: `/api/references/${refId}/delete`,
+                        type: 'DELETE',
+                        success: function(response) {
+                            if (response.success) {
+                                alert(response.message);
+                                location.reload();
+                            } else {
+                                alert('Error: ' + response.message);
+                            }
+                        },
+                        error: function(xhr) {
+                            const errorMsg = xhr.responseJSON?.message || 'Unknown error occurred';
+                            alert('Error: ' + errorMsg);
+                        }
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+</html>

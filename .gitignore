@@ -48,12 +48,16 @@ logs/*.log
 
 # Media (optional - uncomment if you don't want to track media files)
 # media/videos/*.mp4
-# media/references/*.png
-# media/references/*.jpg
+media/references/*.png
+media/references/*.jpg
+media/references/*.jpeg
+media/references/*.bmp
 
 # Config (optional - uncomment if you don't want to track config files)
 # config/CarParkPos_*
 # config/window_config.json
+config/parking.db
+config/parking_layout.json
 
 # Temporary files
 *.tmp
