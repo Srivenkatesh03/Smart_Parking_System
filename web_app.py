@@ -9,11 +9,14 @@ import json
 import threading
 import time
 from datetime import datetime
-from flask import Flask, render_template, Response, jsonify, request
+from flask import Flask, render_template, Response, jsonify, request, send_from_directory
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
+from werkzeug.utils import secure_filename
 import numpy as np
+from PIL import Image as PILImage
 from models.parking_manager import ParkingManager
+from models.database import db, ReferenceImage, ParkingSpaceGroup, init_db
 from utils.resource_manager import ensure_directories_exist, load_parking_positions
 from utils.media_paths import list_available_videos
 
@@ -27,14 +30,23 @@ except ImportError:
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'smart-parking-secret-key-2024'
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+
+# Initialize database
+init_db(app)
 
 # Initialize parking manager
 config_dir = "config"
 log_dir = "logs"
-ensure_directories_exist([config_dir, log_dir])
+media_dir = "media"
+references_dir = os.path.join(media_dir, "references")
+ensure_directories_exist([config_dir, log_dir, media_dir, references_dir])
 parking_manager = ParkingManager(config_dir=config_dir, log_dir=log_dir)
+
+# Allowed file extensions
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'bmp'}
 
 # Global state
 current_frame = None
@@ -247,6 +259,11 @@ def generate_frames():
             time.sleep(0.1)
 
 
+def allowed_file(filename):
+    """Check if file extension is allowed"""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
 # Web Routes
 @app.route('/')
 def index():
@@ -414,6 +431,208 @@ def stop_detection():
             'success': False,
             'error': str(e)
         }), 500
+
+
+# Reference Management Routes
+@app.route('/references')
+def references_view():
+    """Reference images management page"""
+    references = ReferenceImage.query.all()
+    return render_template('references.html', references=references)
+
+
+@app.route('/api/references/add', methods=['POST'])
+def add_reference():
+    """Add a new reference image"""
+    try:
+        name = request.form.get('name')
+        width = request.form.get('width')
+        height = request.form.get('height')
+        video_source = request.form.get('video_source', '')
+        
+        if not name:
+            return jsonify({'success': False, 'message': 'Name is required'}), 400
+        
+        if 'image' not in request.files:
+            return jsonify({'success': False, 'message': 'No image file provided'}), 400
+        
+        file = request.files['image']
+        if file.filename == '':
+            return jsonify({'success': False, 'message': 'No file selected'}), 400
+        
+        if not allowed_file(file.filename):
+            return jsonify({'success': False, 'message': 'Invalid file type. Allowed: jpg, jpeg, png, bmp'}), 400
+        
+        # Check if name already exists
+        existing = ReferenceImage.query.filter_by(name=name).first()
+        if existing:
+            return jsonify({'success': False, 'message': 'Reference with this name already exists'}), 400
+        
+        # Save file
+        filename = secure_filename(file.filename)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{timestamp}_{filename}"
+        filepath = os.path.join(references_dir, filename)
+        file.save(filepath)
+        
+        # Get image dimensions if not provided
+        if not width or not height:
+            img = PILImage.open(filepath)
+            width, height = img.size
+        
+        # Create database entry
+        ref = ReferenceImage(
+            name=name,
+            filename=filename,
+            width=int(width),
+            height=int(height),
+            video_source=video_source
+        )
+        db.session.add(ref)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Reference image "{name}" added successfully',
+            'reference': ref.to_dict()
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/references/<int:ref_id>/delete', methods=['DELETE'])
+def delete_reference(ref_id):
+    """Delete a reference image"""
+    try:
+        ref = ReferenceImage.query.get_or_404(ref_id)
+        
+        # Delete file from disk
+        filepath = os.path.join(references_dir, ref.filename)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        
+        # Delete from database
+        db.session.delete(ref)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Reference image deleted successfully'
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/media/references/<filename>')
+def serve_reference_image(filename):
+    """Serve reference images"""
+    return send_from_directory(references_dir, filename)
+
+
+# Setup Page Routes
+@app.route('/setup')
+def setup_view():
+    """Parking space setup page"""
+    references = ReferenceImage.query.all()
+    return render_template('setup.html', references=references)
+
+
+@app.route('/api/groups/create', methods=['POST'])
+def create_group():
+    """Create a parking space group"""
+    try:
+        name = request.form.get('name')
+        member_spaces_str = request.form.get('member_spaces')
+        
+        if not name:
+            return jsonify({'success': False, 'message': 'Group name is required'}), 400
+        
+        if not member_spaces_str:
+            return jsonify({'success': False, 'message': 'No spaces provided'}), 400
+        
+        member_spaces = json.loads(member_spaces_str)
+        
+        if len(member_spaces) < 2:
+            return jsonify({'success': False, 'message': 'At least 2 spaces required for a group'}), 400
+        
+        # Generate unique group ID
+        group_count = ParkingSpaceGroup.query.count()
+        group_id = f"GROUP_{group_count + 1:03d}"
+        
+        # Create group
+        group = ParkingSpaceGroup(
+            group_id=group_id,
+            name=name,
+            member_spaces=json.dumps(member_spaces)
+        )
+        db.session.add(group)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Group "{name}" created with {len(member_spaces)} spaces',
+            'group': group.to_dict()
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/setup/save', methods=['POST'])
+def save_setup():
+    """Save parking space layout"""
+    try:
+        spaces_str = request.form.get('spaces')
+        reference_id = request.form.get('reference_id')
+        
+        if not spaces_str:
+            return jsonify({'success': False, 'message': 'No spaces data provided'}), 400
+        
+        spaces = json.loads(spaces_str)
+        
+        # Save to config directory
+        config_file = os.path.join(config_dir, 'parking_layout.json')
+        with open(config_file, 'w') as f:
+            json.dump({
+                'spaces': spaces,
+                'reference_id': reference_id,
+                'updated_at': datetime.now().isoformat()
+            }, f, indent=2)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Saved {len(spaces)} parking spaces'
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/setup/load', methods=['GET'])
+def load_setup():
+    """Load saved parking space layout"""
+    try:
+        config_file = os.path.join(config_dir, 'parking_layout.json')
+        
+        if not os.path.exists(config_file):
+            return jsonify({'success': True, 'spaces': []})
+        
+        with open(config_file, 'r') as f:
+            data = json.load(f)
+        
+        return jsonify({
+            'success': True,
+            'spaces': data.get('spaces', []),
+            'reference_id': data.get('reference_id')
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 # SocketIO Events
