@@ -1,0 +1,207 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard - Smart Parking System{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2><i class="bi bi-speedometer2"></i> Parking Dashboard</h2>
+        <hr>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card text-white bg-success">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="card-title">Free Spaces</h5>
+                        <h2 class="mb-0" id="free-spaces">{{ free_spaces }}</h2>
+                    </div>
+                    <i class="bi bi-check-circle fs-1"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-white bg-danger">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="card-title">Occupied Spaces</h5>
+                        <h2 class="mb-0" id="occupied-spaces">{{ occupied_spaces }}</h2>
+                    </div>
+                    <i class="bi bi-x-circle fs-1"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-white bg-primary">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="card-title">Total Spaces</h5>
+                        <h2 class="mb-0" id="total-spaces">{{ total_spaces }}</h2>
+                    </div>
+                    <i class="bi bi-grid-3x3 fs-1"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Video Detection Section -->
+<div class="row mb-4">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="bi bi-camera-video"></i> Live Detection</h5>
+            </div>
+            <div class="card-body">
+                <div class="detection-controls mb-3">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label for="video-source" class="form-label">Video Source:</label>
+                            <select class="form-select" id="video-source">
+                                <option value="">Select a video source...</option>
+                                <option value="carPark.mp4">Car Park Video</option>
+                                <option value="sample5.mp4">Sample Video 1</option>
+                                <option value="Video.mp4">Sample Video 2</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="detection-mode" class="form-label">Detection Mode:</label>
+                            <select class="form-select" id="detection-mode">
+                                <option value="parking">Parking Detection</option>
+                                <option value="vehicle">Vehicle Counting</option>
+                                <option value="both">Both (Simultaneous)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="text-center">
+                    <div class="video-placeholder bg-dark text-white d-flex align-items-center justify-content-center" 
+                         style="height: 400px; border-radius: 5px;">
+                        <div>
+                            <i class="bi bi-camera-video-off fs-1"></i>
+                            <p class="mt-2">Select a video source to start detection</p>
+                            <button class="btn btn-primary" id="start-detection">
+                                <i class="bi bi-play-fill"></i> Start Detection
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Recent Logs -->
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="bi bi-list-ul"></i> Recent Activity</h5>
+            </div>
+            <div class="card-body" style="max-height: 450px; overflow-y: auto;">
+                {% if recent_logs %}
+                <div class="list-group">
+                    {% for log in recent_logs %}
+                    <div class="list-group-item">
+                        <div class="d-flex w-100 justify-content-between">
+                            <small class="text-muted">{{ log.timestamp|date:"H:i:s" }}</small>
+                            <span class="badge 
+                                {% if log.level == 'ERROR' %}bg-danger
+                                {% elif log.level == 'WARNING' %}bg-warning
+                                {% elif log.level == 'INFO' %}bg-info
+                                {% else %}bg-secondary{% endif %}">
+                                {{ log.level }}
+                            </span>
+                        </div>
+                        <p class="mb-1 small">{{ log.message }}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted">No recent activity</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Statistics Summary -->
+{% if latest_stats %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="bi bi-graph-up"></i> Latest Statistics</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-3">
+                        <h6 class="text-muted">Occupancy Rate</h6>
+                        <h4>{{ latest_stats.occupancy_rate|floatformat:1 }}%</h4>
+                    </div>
+                    <div class="col-md-3">
+                        <h6 class="text-muted">Vehicle Count</h6>
+                        <h4>{{ latest_stats.vehicle_count }}</h4>
+                    </div>
+                    <div class="col-md-3">
+                        <h6 class="text-muted">Recorded At</h6>
+                        <h4>{{ latest_stats.timestamp|date:"H:i" }}</h4>
+                    </div>
+                    <div class="col-md-3">
+                        <a href="{% url 'parking:statistics' %}" class="btn btn-primary">
+                            View Full Statistics
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    // Update parking status every 5 seconds
+    function updateStatus() {
+        $.ajax({
+            url: '{% url "parking:api_status" %}',
+            method: 'GET',
+            success: function(data) {
+                $('#free-spaces').text(data.free_spaces);
+                $('#occupied-spaces').text(data.occupied_spaces);
+                $('#total-spaces').text(data.total_spaces);
+            },
+            error: function(xhr, status, error) {
+                console.error('Error updating status:', error);
+            }
+        });
+    }
+    
+    // Update every 5 seconds
+    setInterval(updateStatus, 5000);
+    
+    // Start detection button
+    $('#start-detection').click(function() {
+        const videoSource = $('#video-source').val();
+        const mode = $('#detection-mode').val();
+        
+        if (!videoSource) {
+            alert('Please select a video source');
+            return;
+        }
+        
+        alert('Detection feature will process video: ' + videoSource + ' in ' + mode + ' mode');
+        // In a full implementation, this would start video streaming
+    });
+});
+</script>
+{% endblock %}

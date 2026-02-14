@@ -1,0 +1,21 @@
+# Django Web Application Requirements
+Django>=6.0.2
+djangorestframework>=3.16.1
+
+# Computer Vision and ML
+opencv-python-headless>=4.13.0
+numpy>=2.4.0
+Pillow>=12.0.0
+
+# Optional: For YOLO detection (if needed)
+# ultralytics>=8.0.0
+# torch>=1.7.0
+
+# Database (PostgreSQL support - optional)
+# psycopg2-binary>=2.9.0
+
+# Production server
+# gunicorn>=21.0.0
+
+# Environment variables
+# python-decouple>=3.8

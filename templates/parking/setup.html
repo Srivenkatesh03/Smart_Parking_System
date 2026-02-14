@@ -1,0 +1,278 @@
+{% extends 'base.html' %}
+
+{% block title %}Setup - Smart Parking System{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2><i class="bi bi-tools"></i> Parking Space Setup</h2>
+        <hr>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <div class="row align-items-center">
+                    <div class="col-md-3">
+                        <label for="reference-image" class="form-label mb-0">Reference Image:</label>
+                    </div>
+                    <div class="col-md-4">
+                        <select class="form-select" id="reference-image">
+                            {% for img in reference_images %}
+                            <option value="{{ img }}">{{ img }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-5 text-end">
+                        <div class="btn-group" role="group">
+                            <button type="button" class="btn btn-primary" id="save-spaces">
+                                <i class="bi bi-save"></i> Save Spaces
+                            </button>
+                            <button type="button" class="btn btn-warning" id="load-spaces">
+                                <i class="bi bi-arrow-clockwise"></i> Load Spaces
+                            </button>
+                            <button type="button" class="btn btn-danger" id="clear-spaces">
+                                <i class="bi bi-trash"></i> Clear All
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> 
+                    <strong>Instructions:</strong> Click and drag on the image to draw parking spaces. 
+                    Right-click on a space to delete it.
+                </div>
+                
+                <div class="drawing-modes mb-3">
+                    <label class="form-label">Drawing Mode:</label>
+                    <div class="btn-group" role="group">
+                        <input type="radio" class="btn-check" name="drawing-mode" id="mode-draw" value="draw" checked>
+                        <label class="btn btn-outline-primary" for="mode-draw">
+                            <i class="bi bi-pencil"></i> Draw Box
+                        </label>
+                        
+                        <input type="radio" class="btn-check" name="drawing-mode" id="mode-select" value="select">
+                        <label class="btn btn-outline-primary" for="mode-select">
+                            <i class="bi bi-hand-index"></i> Select Multiple
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="canvas-container position-relative" style="border: 2px solid #ccc; overflow: auto;">
+                    <canvas id="parking-canvas" width="1280" height="720" 
+                            style="cursor: crosshair; max-width: 100%; height: auto;">
+                    </canvas>
+                </div>
+                
+                <div class="mt-3">
+                    <p><strong>Parking Spaces:</strong> <span id="space-count">0</span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    const canvas = document.getElementById('parking-canvas');
+    const ctx = canvas.getContext('2d');
+    let parkingSpaces = [];
+    let isDrawing = false;
+    let startX, startY;
+    let currentRect = null;
+    let backgroundImage = null;
+    
+    // Load reference image
+    function loadReferenceImage(imageName) {
+        const img = new Image();
+        img.onload = function() {
+            canvas.width = img.width;
+            canvas.height = img.height;
+            backgroundImage = img;
+            redrawCanvas();
+        };
+        img.onerror = function() {
+            console.error('Error loading image:', imageName);
+            // Draw a placeholder
+            ctx.fillStyle = '#f0f0f0';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#999';
+            ctx.font = '20px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Reference image: ' + imageName, canvas.width/2, canvas.height/2);
+        };
+        img.src = '/media/' + imageName;
+    }
+    
+    // Redraw canvas
+    function redrawCanvas() {
+        // Clear canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw background image if available
+        if (backgroundImage) {
+            ctx.drawImage(backgroundImage, 0, 0);
+        }
+        
+        // Draw all parking spaces
+        parkingSpaces.forEach((space, index) => {
+            ctx.strokeStyle = '#00ff00';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(space.x, space.y, space.w, space.h);
+            
+            // Draw space number
+            ctx.fillStyle = '#00ff00';
+            ctx.font = '16px Arial';
+            ctx.fillText(`S${index + 1}`, space.x + 5, space.y + 20);
+        });
+        
+        // Draw current rectangle being drawn
+        if (currentRect) {
+            ctx.strokeStyle = '#ff0000';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(currentRect.x, currentRect.y, currentRect.w, currentRect.h);
+        }
+        
+        // Update count
+        $('#space-count').text(parkingSpaces.length);
+    }
+    
+    // Mouse down event
+    canvas.addEventListener('mousedown', function(e) {
+        const rect = canvas.getBoundingClientRect();
+        startX = e.clientX - rect.left;
+        startY = e.clientY - rect.top;
+        
+        if (e.button === 0) {  // Left click
+            isDrawing = true;
+            currentRect = { x: startX, y: startY, w: 0, h: 0 };
+        } else if (e.button === 2) {  // Right click
+            // Check if clicking on an existing space to delete it
+            for (let i = parkingSpaces.length - 1; i >= 0; i--) {
+                const space = parkingSpaces[i];
+                if (startX >= space.x && startX <= space.x + space.w &&
+                    startY >= space.y && startY <= space.y + space.h) {
+                    parkingSpaces.splice(i, 1);
+                    redrawCanvas();
+                    break;
+                }
+            }
+        }
+    });
+    
+    // Mouse move event
+    canvas.addEventListener('mousemove', function(e) {
+        if (isDrawing && currentRect) {
+            const rect = canvas.getBoundingClientRect();
+            const currentX = e.clientX - rect.left;
+            const currentY = e.clientY - rect.top;
+            
+            currentRect.w = currentX - startX;
+            currentRect.h = currentY - startY;
+            redrawCanvas();
+        }
+    });
+    
+    // Mouse up event
+    canvas.addEventListener('mouseup', function(e) {
+        if (isDrawing && currentRect) {
+            // Ensure positive width and height
+            if (currentRect.w < 0) {
+                currentRect.x += currentRect.w;
+                currentRect.w = -currentRect.w;
+            }
+            if (currentRect.h < 0) {
+                currentRect.y += currentRect.h;
+                currentRect.h = -currentRect.h;
+            }
+            
+            // Only add if size is reasonable
+            if (currentRect.w > 20 && currentRect.h > 20) {
+                parkingSpaces.push({
+                    x: Math.round(currentRect.x),
+                    y: Math.round(currentRect.y),
+                    w: Math.round(currentRect.w),
+                    h: Math.round(currentRect.h)
+                });
+            }
+            
+            currentRect = null;
+            isDrawing = false;
+            redrawCanvas();
+        }
+    });
+    
+    // Prevent context menu on right click
+    canvas.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+    });
+    
+    // Load reference image on change
+    $('#reference-image').change(function() {
+        loadReferenceImage($(this).val());
+    });
+    
+    // Save spaces
+    $('#save-spaces').click(function() {
+        const referenceImage = $('#reference-image').val();
+        
+        $.ajax({
+            url: '{% url "parking:api_save_spaces" %}',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                reference_image: referenceImage,
+                positions: parkingSpaces
+            }),
+            success: function(data) {
+                alert('Parking spaces saved successfully!');
+            },
+            error: function(xhr, status, error) {
+                alert('Error saving parking spaces: ' + error);
+            }
+        });
+    });
+    
+    // Load spaces
+    $('#load-spaces').click(function() {
+        const referenceImage = $('#reference-image').val();
+        
+        $.ajax({
+            url: '{% url "parking:api_load_spaces" %}',
+            method: 'GET',
+            data: { reference_image: referenceImage },
+            success: function(data) {
+                if (data.status === 'success') {
+                    parkingSpaces = data.positions;
+                    redrawCanvas();
+                    alert('Parking spaces loaded successfully!');
+                } else {
+                    alert('Error loading parking spaces: ' + data.message);
+                }
+            },
+            error: function(xhr, status, error) {
+                alert('Error loading parking spaces: ' + error);
+            }
+        });
+    });
+    
+    // Clear spaces
+    $('#clear-spaces').click(function() {
+        if (confirm('Are you sure you want to clear all parking spaces?')) {
+            parkingSpaces = [];
+            redrawCanvas();
+        }
+    });
+    
+    // Initialize with first reference image
+    loadReferenceImage($('#reference-image').val());
+});
+</script>
+{% endblock %}
